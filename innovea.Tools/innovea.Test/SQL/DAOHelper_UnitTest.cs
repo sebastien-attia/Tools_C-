@@ -15,9 +15,9 @@ namespace innovea.Test
 
             SQLInfo sqlInfo = new SQLInfo(typeof(Invoice));
 
-            string insertSQL = FormatSQL(SQLCommand.INSERT, sqlInfo);
-            string updateSQL = FormatSQL(SQLCommand.UPDATE, sqlInfo);
-            string deleteSQL = FormatSQL(SQLCommand.DELETE, sqlInfo);
+            string insertSQL = FormatSQL(SQLOperation.INSERT, sqlInfo);
+            string updateSQL = FormatSQL(SQLOperation.UPDATE, sqlInfo);
+            string deleteSQL = FormatSQL(SQLOperation.DELETE, sqlInfo);
         }
     }
 }

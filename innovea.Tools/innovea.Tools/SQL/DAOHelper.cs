@@ -1,6 +1,9 @@
 ﻿using innovea.Tools;
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -13,7 +16,7 @@ namespace innovea.Tools
      */
     public class DAOHelper
     {
-        public enum SQLCommand
+        public enum SQLOperation
         {
             INSERT,
             UPDATE,
@@ -28,6 +31,7 @@ namespace innovea.Tools
             public IList<string> PKColumnNames { get; }
             public IDictionary<string, Func<object, object>> GettersByColumnName { get; }
             public IDictionary<string, Func<object, object, object>> SettersByColumnName { get; }
+            public IDictionary<string, Type> ColumnTypesByColumnName { get; }
 
             public SQLInfo(Type classType)
             {
@@ -40,22 +44,51 @@ namespace innovea.Tools
                 PKColumnNames = mappers.Keys.Where(k => mappers[k][2] != null).OrderBy(k => mappers[k][2]).Select(k => k).ToList<string>();
                 GettersByColumnName = ColumnNames.ToDictionary(k => k, k => (Func<object, object>) mappers[k][0]);
                 SettersByColumnName = ColumnNames.ToDictionary(k => k, k => (Func<object, object, object>) mappers[k][1]);
+                ColumnTypesByColumnName = ColumnNames.ToDictionary(k => k, k => (Type) mappers[k][3]);
             }
         }
 
         private DAOHelper() {}
 
-        public static string FormatSQL(SQLCommand sqlCommand, SQLInfo sqlInfo)
+        public static void executeBatch<T>(SqlCommand sqlCommand, SQLInfo sqlInfo, List<T> objects)
+        {
+            ISet<string> columnNames = sqlInfo.ColumnNames;
+            IDictionary<string, Func<object, object>> getters = sqlInfo.GettersByColumnName;
+            IDictionary<string, Type> columnTypesByColumnName = sqlInfo.ColumnTypesByColumnName;
+
+            IDictionary<Type, SqlDbType> type2SqlDbTypeMapping = StandardType2SqlDbTypeMapping();
+
+            foreach (object obj in objects)
+            {
+                foreach (string columName in columnNames)
+                {
+                    object value = getters[columName](obj);
+                    SqlDbType sqlType = type2SqlDbTypeMapping[ columnTypesByColumnName[columName] ];
+
+                    if (value != null)
+                    {
+                        sqlCommand.Parameters.Add(columName, sqlType).Value = value;
+                    } else
+                    {
+                        sqlCommand.Parameters.Add(columName, sqlType).Value = DBNull.Value;
+                    }
+                }
+
+                sqlCommand.ExecuteNonQuery();
+            }
+        }
+
+        public static string FormatSQL(SQLOperation sqlCommand, SQLInfo sqlInfo)
         {
             StringBuilder builder = new StringBuilder();
             switch(sqlCommand)
             {
-                case SQLCommand.INSERT:
+                case SQLOperation.INSERT:
                     builder.Append(sqlCommand.ToString()).Append(" INTO ").Append(sqlInfo.TableName);
                     builder.Append(" (").Append(String.Join(",", sqlInfo.ColumnNames)).Append(") ");
                     builder.Append(" VALUES ( @").Append(String.Join(", @", sqlInfo.ColumnNames)).Append(") ");
                     break;
-                case SQLCommand.UPDATE:
+                case SQLOperation.UPDATE:
                     if (sqlInfo.PKColumnNames.Count == 0)
                         throw new Exception("No PK defined - Cannot format the SQL/Update");
 
@@ -65,7 +98,7 @@ namespace innovea.Tools
                     builder.Append(String.Join(" AND ", sqlInfo.PKColumnNames.ToList<string>().Select(t => t + " = @" + t)));
                     builder.Append(")");
                     break;
-                case SQLCommand.DELETE:
+                case SQLOperation.DELETE:
                     if (sqlInfo.PKColumnNames.Count == 0)
                         throw new Exception("No PK defined - Cannot format the SQL/Delete");
 
@@ -112,8 +145,10 @@ namespace innovea.Tools
                     columnName = property.Name;
 
                 Func<object, object> getter;
+                Type returnType;
                 {
                     MethodInfo refGetter = property.GetMethod;
+                    returnType = refGetter.ReturnType;
                     getter = o => refGetter.Invoke(o, null);
                 }
 
@@ -123,8 +158,31 @@ namespace innovea.Tools
                     setter = (o, v) => refSetter.Invoke(o, new object[] { v });
                 }
 
-                columnNames.Add(columnName, new object[] { getter, setter, pkOrder });
+                columnNames.Add(columnName, new object[] { getter, setter, pkOrder, returnType });
             }
+        }
+
+        public static IDictionary<Type, SqlDbType> StandardType2SqlDbTypeMapping()
+        {
+            var typeMap = new Dictionary<Type, SqlDbType>();
+
+            typeMap[typeof(string)] = SqlDbType.NVarChar;
+            typeMap[typeof(char[])] = SqlDbType.NVarChar;
+            typeMap[typeof(int)] = SqlDbType.Int;
+            typeMap[typeof(Int32)] = SqlDbType.Int;
+            typeMap[typeof(Int16)] = SqlDbType.SmallInt;
+            typeMap[typeof(Int64)] = SqlDbType.BigInt;
+            typeMap[typeof(Byte[])] = SqlDbType.VarBinary;
+            typeMap[typeof(Boolean)] = SqlDbType.Bit;
+            typeMap[typeof(DateTime)] = SqlDbType.DateTime2;
+            typeMap[typeof(DateTimeOffset)] = SqlDbType.DateTimeOffset;
+            typeMap[typeof(Decimal)] = SqlDbType.Decimal;
+            typeMap[typeof(Double)] = SqlDbType.Float;
+            typeMap[typeof(Decimal)] = SqlDbType.Money;
+            typeMap[typeof(Byte)] = SqlDbType.TinyInt;
+            typeMap[typeof(TimeSpan)] = SqlDbType.Time;
+
+            return typeMap;
         }
     }
 }
