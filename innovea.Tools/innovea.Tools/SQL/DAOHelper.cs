@@ -50,7 +50,66 @@ namespace innovea.Tools
 
         private DAOHelper() {}
 
-        public static void executeBatch<T>(SqlCommand sqlCommand, SQLInfo sqlInfo, List<T> objects)
+        /**
+         * This function is mainly to show an example of how to use ExecuteTx<T>(string connectionStr, Func<SqlTransaction, T> callback).
+         * 
+         */
+        public static void ExecuteTx<T>(string connectionStr, SQLOperation sqlOperation, SQLInfo sqlInfo, IList<T> objects)
+        {
+            Type type = typeof(T);
+            if (!type.Equals(sqlInfo.ClassType))
+                throw new Exception("The SQLInfo class type should be the same than the T type");
+
+            ExecuteTx<IList<T>>(connectionStr, Tx =>
+            {
+                string sql = FormatSQL(sqlOperation, sqlInfo);
+                using (SqlCommand sqlCommand = new SqlCommand(sql, Tx.Connection, Tx))
+                {
+                    ExecuteBatch<T>(sqlCommand, sqlInfo, objects);
+                }
+
+                return objects;
+            });
+        }
+
+        /**
+         * This function is a template on how manage a Transaction in C#/ADO.NET.
+         * 
+         * The business code can be put in the callback function.
+         * 
+         */ 
+        public static T ExecuteTx<T>(string connectionStr, Func<SqlTransaction, T> callback)
+        {
+            using (SqlConnection conn = new SqlConnection(connectionStr))
+            {
+                try
+                {
+                    conn.Open();
+                    SqlTransaction tx = conn.BeginTransaction();
+                    try
+                    {
+                        T result = callback(tx);
+
+                        tx.Commit();
+
+                        return result;
+                    }
+                    catch (Exception evt)
+                    {
+                        tx.Rollback();
+                        throw evt;
+                    }
+                } finally {
+                    conn.Close();
+                }
+            }
+        }
+
+        /**
+         * This function does all the boilerplate code on how 
+         * 
+         */ 
+        public static void ExecuteBatch<T>(SqlCommand sqlCommand, SQLInfo sqlInfo, IList<T> objects)
         {
             ISet<string> columnNames = sqlInfo.ColumnNames;
             IDictionary<string, Func<object, object>> getters = sqlInfo.GettersByColumnName;
@@ -75,16 +134,17 @@ namespace innovea.Tools
                 }
 
                 sqlCommand.ExecuteNonQuery();
+                sqlCommand.Parameters.Clear();
             }
         }
 
-        public static string FormatSQL(SQLOperation sqlCommand, SQLInfo sqlInfo)
+        public static string FormatSQL(SQLOperation sqlOperation, SQLInfo sqlInfo)
         {
             StringBuilder builder = new StringBuilder();
-            switch(sqlCommand)
+            switch(sqlOperation)
             {
                 case SQLOperation.INSERT:
-                    builder.Append(sqlCommand.ToString()).Append(" INTO ").Append(sqlInfo.TableName);
+                    builder.Append(sqlOperation.ToString()).Append(" INTO ").Append(sqlInfo.TableName);
                     builder.Append(" (").Append(String.Join(",", sqlInfo.ColumnNames)).Append(") ");
                     builder.Append(" VALUES ( @").Append(String.Join(", @", sqlInfo.ColumnNames)).Append(") ");
                     break;
@@ -92,7 +152,7 @@ namespace innovea.Tools
                     if (sqlInfo.PKColumnNames.Count == 0)
                         throw new Exception("No PK defined - Cannot format the SQL/Update");
 
-                    builder.Append(sqlCommand.ToString()).Append(" ").Append(sqlInfo.TableName).Append(" SET ");
+                    builder.Append(sqlOperation.ToString()).Append(" ").Append(sqlInfo.TableName).Append(" SET ");
                     builder.Append(String.Join(", ", sqlInfo.ColumnNames.Where(t => !sqlInfo.PKColumnNames.Contains(t)).ToList<string>().Select(t => t + " = @" + t)) );
                     builder.Append(sqlInfo.TableName).Append(" WHERE (");
                     builder.Append(String.Join(" AND ", sqlInfo.PKColumnNames.ToList<string>().Select(t => t + " = @" + t)));
@@ -102,7 +162,7 @@ namespace innovea.Tools
                     if (sqlInfo.PKColumnNames.Count == 0)
                         throw new Exception("No PK defined - Cannot format the SQL/Delete");
 
-                    builder.Append(sqlCommand.ToString()).Append(" FROM ").Append(sqlInfo.TableName);
+                    builder.Append(sqlOperation.ToString()).Append(" FROM ").Append(sqlInfo.TableName);
                     builder.Append(" WHERE (");
                     builder.Append(String.Join(" AND ", sqlInfo.PKColumnNames.ToList<string>().Select(t => t + " = @" + t)));
                     builder.Append(")");
