@@ -1,5 +1,4 @@
-﻿using innovea.Tools;
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Data;
@@ -9,7 +8,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace innovea.Tools
+namespace innovea.Tools.SQL
 {
     /**
      * 
@@ -21,6 +20,8 @@ namespace innovea.Tools
             INSERT,
             UPDATE,
             DELETE,
+
+            SELECT,
         }
 
         public class SQLInfo
@@ -138,6 +139,81 @@ namespace innovea.Tools
             }
         }
 
+        public static IList<T> FindAll<T>(SqlTransaction Tx, IDictionary<string, Func<object, object, object>> settersByColumnName, string sql, IDictionary<string,object[]> conditions)
+        {
+            IDictionary<Type, SqlDbType> type2SqlDbTypeMapping = StandardType2SqlDbTypeMapping();
+
+            using (SqlCommand sqlCommand = new SqlCommand(sql, Tx.Connection, Tx))
+            {
+                int index = 0;
+                foreach(var condition in conditions)
+                {
+                    string columnName = condition.Key;
+                    SqlDbType sqlType = (SqlDbType)condition.Value[0];
+                    object value = condition.Value[1];
+
+                    if (value != null)
+                    {
+                        sqlCommand.Parameters.Add(columnName, sqlType).Value = value;
+                    }
+                    else
+                    {
+                        sqlCommand.Parameters.Add(columnName, sqlType).Value = DBNull.Value;
+                    }
+
+                    index++;
+                }
+
+                IList<T> objs = new List<T>();
+
+                using (SqlDataReader reader = sqlCommand.ExecuteReader())
+                {
+                    try
+                    {
+                        while (reader.Read())
+                        {
+                            T obj = (T)typeof(T).GetConstructor(new Type[] { }).Invoke(new object[] { });
+
+                            int nbColumn = reader.FieldCount;
+                            for (int i = 0; i < nbColumn; i++)
+                            {
+                                string columnName = reader.GetName(i);
+                                object value = reader.GetValue(i);
+
+                                settersByColumnName[columnName](obj, value);
+                            }
+
+                            objs.Add(obj);
+                        }
+                    }
+                    finally
+                    {
+                        reader.Close();
+                    }
+                }
+
+                return objs;
+            }
+        }
+
+        public static T FindByPK<T>(SqlTransaction Tx, SQLInfo sqlInfo, object[] primaryKey)
+        {
+            IDictionary<Type, SqlDbType> type2SqlDbTypeMapping = StandardType2SqlDbTypeMapping();
+
+            IDictionary<string, object[]> conditions = new Dictionary<string, object[]>();
+            for(int i=0; i < sqlInfo.PKColumnNames.Count; i++)
+            {
+                string columnName = sqlInfo.PKColumnNames[i];
+                Type type = sqlInfo.ColumnTypesByColumnName[columnName];
+                SqlDbType sqlType = type2SqlDbTypeMapping[ type ];
+                object value = primaryKey[i];
+
+                conditions[columnName] = new object[] { sqlType, value };
+            }
+
+            return FindAll<T>(Tx, sqlInfo.SettersByColumnName, FormatSQL(SQLOperation.SELECT, sqlInfo), conditions).First<T>();
+        }
+
         public static string FormatSQL(SQLOperation sqlOperation, SQLInfo sqlInfo)
         {
             StringBuilder builder = new StringBuilder();
@@ -163,6 +239,17 @@ namespace innovea.Tools
                         throw new Exception("No PK defined - Cannot format the SQL/Delete");
 
                     builder.Append(sqlOperation.ToString()).Append(" FROM ").Append(sqlInfo.TableName);
+                    builder.Append(" WHERE (");
+                    builder.Append(String.Join(" AND ", sqlInfo.PKColumnNames.ToList<string>().Select(t => t + " = @" + t)));
+                    builder.Append(")");
+                    break;
+
+                case SQLOperation.SELECT:
+                    builder.Append(sqlOperation.ToString()).Append(" * FROM ").Append(sqlInfo.TableName);
+
+                    if (sqlInfo.PKColumnNames.Count == 0)
+                        return builder.ToString();
+
                     builder.Append(" WHERE (");
                     builder.Append(String.Join(" AND ", sqlInfo.PKColumnNames.ToList<string>().Select(t => t + " = @" + t)));
                     builder.Append(")");

@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace innovea.Tools
+namespace innovea.Tools.SQL
 {
     [AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
     public class Table : Attribute

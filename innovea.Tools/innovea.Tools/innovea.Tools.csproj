@@ -42,7 +42,10 @@
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SQL\Column.cs" />
+    <Compile Include="SQL\Context.cs" />
     <Compile Include="SQL\DAOHelper.cs" />
+    <Compile Include="SQL\DefaultDataAccessObject.cs" />
+    <Compile Include="SQL\IDataAccessObject.cs" />
     <Compile Include="SQL\Table.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
