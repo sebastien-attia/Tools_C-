@@ -1,12 +1,10 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace innovea.Tools.SQL
 {
@@ -122,16 +120,24 @@ namespace innovea.Tools.SQL
             {
                 foreach (string columName in columnNames)
                 {
+                    string cn = "@" + columName;
                     object value = getters[columName](obj);
                     SqlDbType sqlType = type2SqlDbTypeMapping[ columnTypesByColumnName[columName] ];
 
+                    SqlParameter parameter = new SqlParameter();
+                    parameter.ParameterName = cn;
+                    parameter.SqlDbType = sqlType;
+
                     if (value != null)
                     {
-                        sqlCommand.Parameters.Add(columName, sqlType).Value = value;
-                    } else
-                    {
-                        sqlCommand.Parameters.Add(columName, sqlType).Value = DBNull.Value;
+                        parameter.Value = value;
                     }
+                    else
+                    {
+                        parameter.Value = DBNull.Value;
+                    }
+
+                    sqlCommand.Parameters.Add(parameter);
                 }
 
                 sqlCommand.ExecuteNonQuery();
@@ -149,17 +155,23 @@ namespace innovea.Tools.SQL
                 foreach(var condition in conditions)
                 {
                     string columnName = condition.Key;
-                    SqlDbType sqlType = (SqlDbType)condition.Value[0];
+                    SqlDbType sqlType = (SqlDbType) condition.Value[0];
                     object value = condition.Value[1];
+
+                    SqlParameter parameter = new SqlParameter();
+                    parameter.ParameterName = columnName;
+                    parameter.SqlDbType = sqlType;
 
                     if (value != null)
                     {
-                        sqlCommand.Parameters.Add(columnName, sqlType).Value = value;
+                        parameter.Value = value;
                     }
                     else
                     {
-                        sqlCommand.Parameters.Add(columnName, sqlType).Value = DBNull.Value;
+                        parameter.Value = DBNull.Value;
                     }
+
+                    sqlCommand.Parameters.Add(parameter);
 
                     index++;
                 }
@@ -178,13 +190,25 @@ namespace innovea.Tools.SQL
                             for (int i = 0; i < nbColumn; i++)
                             {
                                 string columnName = reader.GetName(i);
+
+                                // Set only the field defined in the class
+                                if (!settersByColumnName.ContainsKey(columnName))
+                                    continue;
+
                                 object value = reader.GetValue(i);
 
-                                settersByColumnName[columnName](obj, value);
+                                if (value != DBNull.Value)
+                                    settersByColumnName[columnName](obj, value);
+                                else
+                                    settersByColumnName[columnName](obj, null);
                             }
 
                             objs.Add(obj);
                         }
+                    }
+                    catch(Exception evt)
+                    {
+                        throw evt;
                     }
                     finally
                     {

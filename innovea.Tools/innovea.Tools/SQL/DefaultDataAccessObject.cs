@@ -2,17 +2,37 @@
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using static innovea.Tools.SQL.DAOHelper;
 
 namespace innovea.Tools.SQL
 {
     public class DefaultDataAccessObject<T> : IDataAccessObject<T>
     {
+        public IDictionary<string, Func<object, object>> GettersByColumnName { get; }
+        public IDictionary<string, Func<object, object, object>> SettersByColumnName { get; }
+
         private SQLInfo sqlInfo;
 
-        public DefaultDataAccessObject() {}
+        public DefaultDataAccessObject() : this(new Dictionary<string, Func<object, object>>(), new Dictionary<string, Func<object, object, object>>()) {}
+
+        public DefaultDataAccessObject(IDictionary<string, Func<object, object>> overrideGettersByColumnName, IDictionary<string, Func<object, object, object>> overrideSettersByColumnName)
+        {
+            this.sqlInfo = new SQLInfo(typeof(T));
+
+            // Override the values
+            foreach (var mutatorByColumnName in overrideGettersByColumnName)
+            {
+                this.sqlInfo.GettersByColumnName[mutatorByColumnName.Key] = mutatorByColumnName.Value;
+            }
+
+            foreach (var mutatorByColumnName in overrideSettersByColumnName)
+            {
+                this.sqlInfo.SettersByColumnName[mutatorByColumnName.Key] = mutatorByColumnName.Value;
+            }
+
+            GettersByColumnName = this.sqlInfo.GettersByColumnName;
+            SettersByColumnName = this.sqlInfo.SettersByColumnName;
+        }
 
         public IList<T> Create(Context ctxt, IList<T> objs)
         {

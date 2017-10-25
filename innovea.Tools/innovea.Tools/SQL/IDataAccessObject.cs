@@ -1,13 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace innovea.Tools.SQL
 {
     public  interface IDataAccessObject<T>
     {
+        IDictionary<string, Func<object, object>> GettersByColumnName { get; }
+        IDictionary<string, Func<object, object, object>> SettersByColumnName { get; }
+
         T Create(Context ctxt, T obj);
         IList<T> Create(Context ctxt, IList<T> objs);
 
